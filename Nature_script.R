@@ -43,36 +43,22 @@ library(devtools)
 # exercises of marathon runners 
 # user profiles of marathon runners
 
-activities <- read.csv2("activities_180days.csv",stringsAsFactors = FALSE)
+activities <- read.csv2("activities_used_180days.csv",stringsAsFactors = FALSE)
 profiles <-  read.csv2("marathon_runners_prof.csv",stringsAsFactors = FALSE)
-
-# remove duplicates (identical exerises in all columns)
-
-activities <- activities %>% distinct()
-
-# remove activities for too high velocity (for running 7.58m/sec = 1000m WR speed)
-# and distance below 1000m
-
-activities <- activities %>% filter(velocity < 7.58)
-activities <- activities %>% filter(distance >= 1000)
-
-activities <- activities %>% mutate(days = as.Date(as.character(marathon_day), format="%Y-%m-%d")-
-                                      as.Date(as.character(start_date), format="%Y-%m-%d"))
 
 # group activities by runner_id and marathon_day, order by date and then by distance,
 
-activities <- activities %>% group_by(h_user_id,marathon_day) %>% arrange(start_date,distance)
+activities <- activities %>% group_by(h_user_id,marathon_day) %>% arrange(distance)
 
 # summarize into training seasons, per runner and marathon
 
-training <- summarise(activities,runs=n(),total_dist=sum(distance),total_time_min=sum(duration)/60000,mean_vel=mean(velocity),Mdist=last(distance),MHRav=last(hr_avg),Mvel=last(velocity))
+training <- summarise(activities,runs=n(),total_dist=sum(distance),total_time_min=sum(duration)/60000,mean_vel=mean(velocity),Mdist=last(distance),Mvel=last(velocity))
 
 # exclude too long distance (>43000) and "new world records"
 # lower limit for number of total runs in 6 months before marathon = 50
 
 training <- training %>% filter(Mdist<43000,Mvel<42195/(121*60))
 training <- training %>% filter(runs >= 50)
-
 
 ### 
 ### select RACE events ###
@@ -89,20 +75,21 @@ as.numeric.factor <- function(x) {as.numeric(levels(x))[x]}
 
 activities$bin <- cut(activities$distance,breaks=d_bins,labels=d_labs) 
 activities <- activities %>% mutate(vel_actual=1000*as.numeric.factor(bin)/duration)
-activities_bins <- activities %>% group_by(h_user_id,marathon_day,bin)  %>% summarise(vel_max=max(vel_actual),p_max=max(p))
+activities_bins <- activities %>% group_by(h_user_id,marathon_day,bin)  %>% summarise(vel_max=max(vel_actual))
 
 # remove races that are "new world record", and also 0 distance bin!
 
 activities_bins <- activities_bins %>% filter((bin==5000 & vel_max < 6.60) | (bin==10000 & vel_max < 6.34) | (bin==21097.5 & vel_max < 6.03) | (bin==42195 & vel_max < 5.78))
 
 races_by_vel <- semi_join(activities,activities_bins,by=c("h_user_id"="h_user_id","marathon_day"="marathon_day","vel_actual"="vel_max","bin"="bin")) %>% filter(bin!=0) %>%
-  dplyr::select(h_user_id,marathon_day,bin,vel_actual,duration,ascent,descent,hr_avg,hr_max,run_index,p)
+  dplyr::select(h_user_id,marathon_day,bin,vel_actual,duration)
+
 races_by_vel <- races_by_vel %>% group_by(h_user_id,marathon_day)
 
 races_by_vel <- races_by_vel %>% arrange(h_user_id,marathon_day,desc(bin)) %>% 
   mutate(cur_max = ave(vel_actual, h_user_id, FUN=cummax))
 
-races_by_vel <- races_by_vel %>% filter(vel_actual == cur_max) %>% dplyr::select(h_user_id,marathon_day,bin,vel_actual,duration,ascent,descent,run_index,p) %>% mutate(time=duration/1000)
+races_by_vel <- races_by_vel %>% filter(vel_actual == cur_max) %>% dplyr::select(h_user_id,marathon_day,bin,vel_actual,duration) %>% mutate(time=duration/1000)
 
 Real_M_times <- races_by_vel %>% filter(bin==42195) %>% 
 summarise(Mdist=first(bin),Mtime=first(time)) %>% filter(Mtime>121*60+39)
